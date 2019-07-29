@@ -35,6 +35,8 @@ namespace FOCA
     {
         public static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
+        private CancellationTokenSource updateUITokenSource;
+
         /// <summary>
         /// Array with extensions.
         /// </summary>
@@ -89,6 +91,7 @@ namespace FOCA
             FillSupportedExtensions();
 
             ProjectManager = new ProjectManager(this);
+            this.updateUITokenSource = new CancellationTokenSource();
         }
 
         /// <summary>
@@ -145,13 +148,7 @@ namespace FOCA
 
                 SetItemsMenu(null, null);
 
-                var tUpdaterBackground = new Thread(new ThreadStart(UpdateBackgroundAsync))
-                {
-                    IsBackground = true,
-                    Priority = ThreadPriority.AboveNormal
-                };
-
-                tUpdaterBackground.Start();
+                Task.Factory.StartNew(UpdateBackgroundAsync, this.updateUITokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
                 Program.data.Project.ProjectName = Project.DefaultProjectName;
                 Text = Program.ProgramName;
@@ -232,6 +229,7 @@ namespace FOCA
                 e.Cancel = true;
                 return;
             }
+            this.updateUITokenSource.Cancel();
             Text = Program.ProgramName + " - Closing...";
         }
 
@@ -3014,15 +3012,23 @@ namespace FOCA
             splitContainerMain.Refresh();
         }
 
-        private void UpdateBackgroundAsync()
+        private async Task UpdateBackgroundAsync()
         {
-            var interval = 1000;
-
-            while (true)
+            TimeSpan delay = TimeSpan.FromSeconds(2);
+            UpdateGUI.Initialize();
+            do
             {
-                UpdateGUI.realUpdateTree();
-                Thread.Sleep(interval);
-            }
+                UpdateGUI.UpdateTree();
+                try
+                {
+                    await Task.Delay(delay, this.updateUITokenSource.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+
+            } while (!this.updateUITokenSource.Token.IsCancellationRequested);
         }
 
         /// <summary>
